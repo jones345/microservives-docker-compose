@@ -1,0 +1,133 @@
+version: '3'
+
+services:
+  zook:
+    image: confluentinc/cp-zookeeper:7.2.0
+    hostname: zook
+    container_name: zook
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_SERVER_ID: 1
+      ZOOKEEPER_SERVERS: zoo1:2888:3888
+
+  kafka:
+    image: confluentinc/cp-kafka:7.2.0
+    hostname: kafka
+    container_name: kafka
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+      - "9999:9999"
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka1:19092,EXTERNAL://${DOCKER_HOST_IP:-127.0.0.1}:9092,DOCKER://host.docker.internal:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,DOCKER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_ZOOKEEPER_CONNECT: "zoo1:2181"
+      KAFKA_BROKER_ID: 1
+      KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_JMX_PORT: 9999
+      KAFKA_JMX_HOSTNAME: ${DOCKER_HOST_IP:-127.0.0.1}
+      KAFKA_AUTHORIZER_CLASS_NAME: kafka.security.authorizer.AclAuthorizer
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
+    depends_on:
+      - zook
+
+
+
+  cadvisor:
+    image: google/cadvisor
+    hostname: cadvisor
+    container_name: cadvisor
+    ports:
+      - "8080:8080"
+    command: -logtostderr -docker_only
+    privileged: true
+#    volumes:
+#      #- /etc/kmsg:/etc/kmsg:ro
+#      - /var/run/docker.sock:/var/run/docker.sock:ro
+#      - /:/rootfs:ro
+#      - /var/run:/var/run
+#      - /sys:/sys:ro
+#      - /var/lib/docker/:/var/lib/docker:ro
+
+  node-exporter:
+      image: 'prom/node-exporter'
+      hostname: node-exporter
+      container_name: node-exporter
+      ports:
+        - "9100:9100"
+      volumes:
+        - '/:/host:ro,rslave'
+      command:
+        - '--path.rootfs=/host'
+      #network_mode: host
+      pid: host
+      restart: unless-stopped
+
+  prometheus:
+      image: 'prom/prometheus'
+      hostname: prometheus
+      container_name: prometheus
+      command:
+        - '--config.file=/etc/prometheus/prometheus.yml'
+        - '--storage.tsdb.path=/prometheus'
+        - '--storage.tsdb.retention=${PROMETHEUS_RETENTION:-24h}'
+#      volumes:
+#        - /var/lib/docker/config-docker/Prometheus:/prometheus
+#        - /var/lib/docker/config-docker/Prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      ports:
+        - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:7.0.3
+    hostname: grafana
+    container_name: grafana
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SERVER_DOMAIN=localhost
+      - GF_LOG_MODE=console file
+    depends_on:
+      - prometheus
+
+  postgresql_database:
+    image: postgres:latest
+    hostname: postgresql_database
+    container_name: postgresql_database
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin1234
+      - POSTGRES_DB=productDb
+    ports:
+      - "54320:5432"
+    restart: always
+#    volumes:
+#      - database-data:/var/lib/postgresql/data/
+
+  pgadmin:
+    image: dpage/pgadmin4
+    hostname: pgadmin
+    container_name: pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=pgadmin4@pgadmin.org
+      - PGADMIN_DEFAULT_PASSWORD=admin1234
+    ports:
+      - '5050:80'
+    restart: always
+#    volumes:
+#      - pgadmin:/root/.pgadmin
+
+
+
+
+volumes:
+  local_pgdata:
+  pgadmin-data:
